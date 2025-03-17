@@ -17,7 +17,9 @@ import base64
 import binascii
 import cbor2
 import logging
+import datetime
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
 from pycose.keys import CoseKey
 from typing import Union
 
@@ -62,16 +64,24 @@ class MdocCborIssuer:
         validity: dict = None,
         devicekeyinfo: Union[dict, CoseKey, str] = None,
         cert_path: str = None,
+        perm_cert_path: str = None,
         revocation: dict = None,
+        status_list: dict = {},
     ):
         """
         create a new mdoc with signed mso
         """
         if isinstance(devicekeyinfo, dict):
-            devicekeyinfo = CoseKey.from_dict(devicekeyinfo)
+            devicekeyinfoCoseKeyObject = CoseKey.from_dict(devicekeyinfo)
+            devicekeyinfo = {
+                1: devicekeyinfoCoseKeyObject.kty.identifier,
+                -1: devicekeyinfoCoseKeyObject.crv.identifier,
+                -2: devicekeyinfoCoseKeyObject.x,
+                -3: devicekeyinfoCoseKeyObject.y,
+            }
         if isinstance(devicekeyinfo, str):
             device_key_bytes = base64.urlsafe_b64decode(devicekeyinfo.encode("utf-8"))
-            public_key = serialization.load_pem_public_key(device_key_bytes)
+            public_key:EllipticCurvePublicKey = serialization.load_pem_public_key(device_key_bytes)
             curve_name = public_key.curve.name
             curve_map = {
                 "secp256r1": 1,  # NIST P-256
@@ -111,6 +121,7 @@ class MdocCborIssuer:
             msoi = MsoIssuer(
                 data=data,
                 cert_path=cert_path,
+                pem_cert_path=perm_cert_path,
                 hsm=self.hsm,
                 key_label=self.key_label,
                 user_pin=self.user_pin,
@@ -119,6 +130,7 @@ class MdocCborIssuer:
                 alg=self.alg,
                 kid=self.kid,
                 validity=validity,
+                status_list=status_list,
                 revocation=revocation,
             )
 
@@ -128,11 +140,13 @@ class MdocCborIssuer:
                 private_key=self.private_key,
                 alg=self.alg,
                 cert_path=cert_path,
+                pem_cert_path=perm_cert_path,
                 validity=validity,
+                status_list=status_list,
                 revocation=revocation,
             )
 
-        mso = msoi.sign(doctype=doctype, device_key=devicekeyinfo)
+        mso = msoi.sign(doctype=doctype, device_key=devicekeyinfo,valid_from=datetime.datetime.now())
 
         mso_cbor = mso.encode(
             tag=False,
@@ -143,23 +157,22 @@ class MdocCborIssuer:
             slot_id=self.slot_id,
         )
 
-        # TODO: for now just a single document, it would be trivial having
-        # also multiple but for now I don't have use cases for this
+
         res = {
-            # "version": self.version,
-            # "documents": [
-            # {
-            # "docType": doctype,  # 'org.iso.18013.5.1.mDL'
-            # "issuerSigned": {
-            "nameSpaces": {
-                ns: [v for k, v in dgst.items()]
-                for ns, dgst in msoi.disclosure_map.items()
-            },
-            "issuerAuth": cbor2.decoder.loads(mso_cbor),
-            # },
-            # }
-            # ],
-            # "status": self.status,
+            "version": self.version,
+            "documents": [
+                {
+                "docType": doctype,  # 'org.iso.18013.5.1.mDL'
+                "issuerSigned": {
+                    "nameSpaces": {
+                        ns: [v for k, v in dgst.items()]
+                        for ns, dgst in msoi.disclosure_map.items()
+                        },
+                    "issuerAuth": cbor2.decoder.loads(mso_cbor),
+                    },
+                }
+            ],
+            "status": self.status,
         }
 
         # print("mso diganostic notation: \n", cbor2diag(mso_cbor))

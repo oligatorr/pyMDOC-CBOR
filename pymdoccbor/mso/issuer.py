@@ -46,6 +46,7 @@ class MsoIssuer(MsoX509Fabric):
         validity: str,
         revocation: str = None,
         cert_path: str = None,
+        pem_cert_path: str = None,
         key_label: str = None,
         user_pin: str = None,
         lib_path: str = None,
@@ -55,6 +56,7 @@ class MsoIssuer(MsoX509Fabric):
         hsm: bool = False,
         private_key: Union[dict, CoseKey] = None,
         digest_alg: str = settings.PYMDOC_HASHALG,
+        status_list: dict = {}
     ):
         if not hsm:
             if private_key and isinstance(private_key, dict):
@@ -69,6 +71,7 @@ class MsoIssuer(MsoX509Fabric):
         self.data: dict = data
         self.hash_map: dict = {}
         self.cert_path = cert_path
+        self.pem_cert_path = pem_cert_path
         self.disclosure_map: dict = {}
         self.digest_alg: str = digest_alg
         self.key_label = key_label
@@ -80,6 +83,7 @@ class MsoIssuer(MsoX509Fabric):
         self.kid = kid
         self.validity = validity
         self.revocation = revocation
+        self.status_list = status_list
 
         alg_map = {"ES256": "sha256", "ES384": "sha384", "ES512": "sha512"}
 
@@ -173,6 +177,7 @@ class MsoIssuer(MsoX509Fabric):
                 "deviceKey": device_key,
             },
             "digestAlgorithm": alg_map.get(self.alg),
+            "status": self.status_list
         }
 
         if self.revocation is not None:
@@ -184,6 +189,14 @@ class MsoIssuer(MsoX509Fabric):
                 certificate = file.read()
 
             cert = x509.load_der_x509_certificate(certificate)
+
+            _cert = cert.public_bytes(getattr(serialization.Encoding, "DER"))
+        elif self.pem_cert_path:
+            # Load the PEM certificate file
+            with open(self.pem_cert_path, "rb") as file:
+                certificate = file.read()
+
+            cert = x509.load_pem_x509_certificate(certificate)
 
             _cert = cert.public_bytes(getattr(serialization.Encoding, "DER"))
         else:

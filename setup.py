@@ -64,5 +64,6 @@ setup(
         "cwt>=2.3.0,<2.4",
         #'pycose>=1.0.1,<1.1.0'
         "pycose @ git+https://github.com/devisefutures/pycose.git@hsm",
+        "cbor-diag==1.0.2",
     ],
 )
